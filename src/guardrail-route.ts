@@ -56,6 +56,8 @@ export async function registerGuardrailRoute(
         litellm_call_id: payload.litellm_call_id,
       };
 
+      request.log.debug({ payload: litellmPayload }, 'Incoming guardrail payload');
+
       const originalText = extractText(litellmPayload.texts);
       const vigilRequest = buildVigilRequest(litellmPayload);
       if (!vigilRequest || !originalText) {

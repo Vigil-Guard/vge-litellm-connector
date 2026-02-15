@@ -1,11 +1,11 @@
 name: vge-litellm
 
 services:
-  vigil-litellm-adapter:
+  vge-litellm-adapter:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: vigil-litellm-adapter
+    container_name: vge-litellm-adapter
     restart: unless-stopped
     # Internal only for single-host compose reference setup.
     # For multi-host deployment publish via controlled ingress/firewall.
@@ -20,6 +20,14 @@ services:
       ADAPTER_INBOUND_BEARER_TOKEN: ${ADAPTER_INBOUND_BEARER_TOKEN:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       NODE_ENV: production
+      # For self-signed / internal CA environments, set NODE_EXTRA_CA_CERTS
+      # or NODE_TLS_REJECT_UNAUTHORIZED=0 (dev only) in .env
+      NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-}
+    # Map VGE hostname to Docker host when VGE runs on the same machine.
+    # Remove or adjust for production where DNS resolves natively.
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+      - '${VGE_DOCKER_HOST:-api.vigilguard}:host-gateway'
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -43,8 +51,9 @@ services:
         ]
 
   litellm-proxy:
-    # PINNED version - generic_guardrail_api is BETA, avoid unexpected contract changes
-    image: ghcr.io/berriai/litellm:v1.63.14.dev3
+    # main-stable tracks latest stable release. Pin to a specific tag
+    # (e.g. v1.81.9) if you need reproducible builds.
+    image: ghcr.io/berriai/litellm:main-stable
     container_name: litellm-proxy
     restart: unless-stopped
     ports:
@@ -53,9 +62,11 @@ services:
       - ./litellm-config.yaml:/app/config.yaml:ro
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-litellm-master}
-    command: ['--config', '/app/config.yaml', '--port', '4000']
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    command: ['--config', '/app/config.yaml', '--port', '4000', '--detailed_debug']
     depends_on:
-      vigil-litellm-adapter:
+      vge-litellm-adapter:
         condition: service_healthy
     networks:
       - litellm-internal
