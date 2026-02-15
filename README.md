@@ -2,6 +2,8 @@
 
 Thin HTTP adapter that integrates [LiteLLM Proxy](https://docs.litellm.ai/) with [Vigil Guard Enterprise](https://github.com/vigilguard/enterprise). It translates LiteLLM's `generic_guardrail_api` payloads into Vigil Guard `POST /v1/guard/analyze` requests and maps decisions back to LiteLLM guardrail actions.
 
+The adapter connects to Vigil Guard's public HTTPS API (port 443) - no internal Docker network bridging required.
+
 ```
 Client
   |
@@ -13,7 +15,7 @@ LiteLLM Proxy (OpenAI-compatible)
           v
       VGE LiteLLM Connector         <-- this service
           |
-          +--> POST /v1/guard/analyze (Vigil Guard)
+          +--> HTTPS POST /v1/guard/analyze (Vigil Guard public API)
           |
           +--> map decision -> LiteLLM action
   |
@@ -25,30 +27,20 @@ Client response
 
 ## Quick Start
 
-### With local Vigil Guard stack
-
 ```bash
 cp .env.example .env
-# Edit .env: set VIGIL_API_KEY to your Vigil Guard API key
+# Edit .env:
+#   VIGIL_API_URL=https://your-vigilguard-api.example.com
+#   VIGIL_API_KEY=vg_live_your_key_here
 
 docker compose up -d
-```
-
-The adapter joins VGE's `vigil-public` network and reaches the API at `http://api:8787`.
-
-### Standalone (remote Vigil Guard)
-
-```bash
-VIGIL_API_URL=https://your-vigil-api.example.com \
-VIGIL_API_KEY=vg_live_your_key \
-docker compose -f docker-compose.yml -f docker-compose.standalone.yml up -d
 ```
 
 ## Environment Variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `VIGIL_API_URL` | Yes | - | Vigil Guard API base URL |
+| `VIGIL_API_URL` | Yes | - | Vigil Guard public API URL (HTTPS) |
 | `VIGIL_API_KEY` | Yes | - | API key (Bearer token) |
 | `ADAPTER_PORT` | No | `8081` | Listen port |
 | `VIGIL_TIMEOUT_MS` | No | `3000` | Per-call timeout to Vigil (ms) |

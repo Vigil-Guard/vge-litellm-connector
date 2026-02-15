@@ -11,7 +11,7 @@ services:
       - '8081:8081'
     environment:
       ADAPTER_PORT: '8081'
-      VIGIL_API_URL: ${VIGIL_API_URL:-http://api:8787}
+      VIGIL_API_URL: ${VIGIL_API_URL:?VIGIL_API_URL is required (HTTPS endpoint)}
       VIGIL_API_KEY: ${VIGIL_API_KEY:?VIGIL_API_KEY is required}
       VIGIL_TIMEOUT_MS: ${VIGIL_TIMEOUT_MS:-3000}
       ADAPTER_FAIL_MODE: ${ADAPTER_FAIL_MODE:-closed}
@@ -26,7 +26,6 @@ services:
       - /tmp
     networks:
       - litellm-internal
-      - vigil-public
     healthcheck:
       interval: 15s
       timeout: 3s
@@ -61,6 +60,3 @@ services:
 networks:
   litellm-internal:
     driver: bridge
-  vigil-public:
-    external: true
-    name: vigil-public
