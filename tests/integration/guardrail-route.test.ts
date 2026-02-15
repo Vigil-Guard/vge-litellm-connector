@@ -194,6 +194,44 @@ describe('guardrail route integration', () => {
     await app.close();
   });
 
+  it('sends Authorization header to Vigil API', async () => {
+    let capturedAuthHeader: string | undefined;
+    mockVigilServer.removeAllListeners('request');
+    mockVigilServer.on('request', (req: IncomingMessage, res: ServerResponse) => {
+      capturedAuthHeader = req.headers['authorization'] as string | undefined;
+      let data = '';
+      req.on('data', (chunk: Buffer) => { data += String(chunk); });
+      req.on('end', () => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ requestId: 'auth-test', decision: 'ALLOWED', categories: [] }));
+      });
+    });
+
+    const app = await buildApp(buildConfig({ vigilApiKey: 'vg_live_secret123' }));
+    await app.inject({
+      method: 'POST',
+      url: '/beta/litellm_basic_guardrail_api',
+      payload: { input_type: 'request', texts: ['hello'] },
+    });
+
+    expect(capturedAuthHeader).toBe('Bearer vg_live_secret123');
+
+    // Restore default handler
+    mockVigilServer.removeAllListeners('request');
+    mockVigilServer.on('request', (req: IncomingMessage, res: ServerResponse) => {
+      let data = '';
+      req.on('data', (chunk: Buffer) => { data += String(chunk); });
+      req.on('end', () => {
+        const parsed = JSON.parse(data) as Record<string, unknown>;
+        const { status, body } = mockVigilHandler(parsed);
+        res.writeHead(status, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(body));
+      });
+    });
+
+    await app.close();
+  });
+
   it('returns BLOCKED on backend error (fail-closed)', async () => {
     mockVigilHandler = () => ({ status: 500, body: { error: 'internal' } });
     const app = await buildApp(buildConfig({ failMode: 'closed' }));

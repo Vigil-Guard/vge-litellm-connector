@@ -1,4 +1,4 @@
-FROM node:24-slim AS base
+FROM node:24-slim@sha256:a81a03dd965b4052269a57fac857004022b522a4bf06e7a739e25e18bce45af2 AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN npm install -g pnpm@10.28.1
@@ -14,7 +14,7 @@ COPY tsconfig.json ./
 COPY src/ ./src/
 RUN pnpm build && CI=true pnpm install --prod --frozen-lockfile --ignore-scripts
 
-FROM node:24-slim AS runner
+FROM node:24-slim@sha256:a81a03dd965b4052269a57fac857004022b522a4bf06e7a739e25e18bce45af2 AS runner
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 RUN addgroup --system --gid 1001 nodejs && \

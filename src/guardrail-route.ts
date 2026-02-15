@@ -52,7 +52,8 @@ export async function registerGuardrailRoute(
         );
 
         return reply.send(litellmResponse);
-      } catch {
+      } catch (err) {
+        request.log.error({ err }, 'Guardrail processing failed');
         return reply.send(failClosedResponse());
       }
     },

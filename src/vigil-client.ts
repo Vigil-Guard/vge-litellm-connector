@@ -69,6 +69,7 @@ async function fetchWithRetry(
       });
 
       if (!response.ok) {
+        await response.body?.cancel();
         const statusError = new Error(`Vigil API returned ${String(response.status)}`);
         (statusError as NodeJS.ErrnoException).code = String(response.status);
         throw statusError;
@@ -98,6 +99,8 @@ function isRetryable(error: unknown): boolean {
     if (error.name === 'AbortError') return true;
     const code = (error as NodeJS.ErrnoException).code;
     if (code && RETRYABLE_STATUS_CODES.has(parseInt(code, 10))) return true;
+    const cause = (error as { cause?: { code?: string } }).cause;
+    if (cause?.code === 'ECONNREFUSED' || cause?.code === 'ECONNRESET') return true;
     if (error.message.includes('ECONNREFUSED') || error.message.includes('ECONNRESET')) return true;
   }
   return false;

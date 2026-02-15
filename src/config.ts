@@ -12,10 +12,10 @@ export function loadConfig(): AdapterConfig {
   const vigilApiKey = requireEnv('VIGIL_API_KEY');
 
   return {
-    port: parseInt(process.env['ADAPTER_PORT'] ?? '8081', 10),
+    port: parseIntSafe(process.env['ADAPTER_PORT'], 8081),
     vigilApiUrl: vigilApiUrl.replace(/\/+$/, ''),
     vigilApiKey,
-    vigilTimeoutMs: parseInt(process.env['VIGIL_TIMEOUT_MS'] ?? '3000', 10),
+    vigilTimeoutMs: parseIntSafe(process.env['VIGIL_TIMEOUT_MS'], 3000),
     failMode: parseFailMode(process.env['ADAPTER_FAIL_MODE']),
     logLevel: process.env['LOG_LEVEL'] ?? 'info',
   };
@@ -28,6 +28,12 @@ function requireEnv(name: string): string {
     process.exit(1);
   }
   return value;
+}
+
+function parseIntSafe(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
 }
 
 function parseFailMode(value: string | undefined): 'closed' | 'open' {

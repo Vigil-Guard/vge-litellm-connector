@@ -62,4 +62,16 @@ describe('loadConfig', () => {
     const config = loadConfig();
     expect(config.vigilTimeoutMs).toBe(2000);
   });
+
+  it('falls back to default on NaN port', () => {
+    process.env['ADAPTER_PORT'] = 'abc';
+    const config = loadConfig();
+    expect(config.port).toBe(8081);
+  });
+
+  it('falls back to default on NaN timeout', () => {
+    process.env['VIGIL_TIMEOUT_MS'] = 'not-a-number';
+    const config = loadConfig();
+    expect(config.vigilTimeoutMs).toBe(3000);
+  });
 });
