@@ -7,6 +7,11 @@ import { registerMetrics } from './metrics.js';
 const config = loadConfig();
 
 const app = Fastify({
+  ajv: {
+    customOptions: {
+      coerceTypes: false,
+    },
+  },
   logger: {
     level: config.logLevel,
     ...(process.env['NODE_ENV'] !== 'production'

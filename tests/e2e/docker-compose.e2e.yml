@@ -1,0 +1,190 @@
+name: vge-litellm-e2e
+
+services:
+  mock-vigil:
+    image: node:24-alpine
+    command:
+      - node
+      - -e
+      - |
+        const http = require('http');
+        const server = http.createServer((req, res) => {
+          if (req.method === 'GET' && req.url === '/health') {
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ status: 'ok' }));
+            return;
+          }
+
+          if (req.method !== 'POST' || req.url !== '/v1/guard/analyze') {
+            res.writeHead(404, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ error: 'not_found' }));
+            return;
+          }
+
+          let body = '';
+          req.on('data', (chunk) => {
+            body += String(chunk);
+          });
+          req.on('end', () => {
+            let payload = {};
+            try {
+              payload = JSON.parse(body);
+            } catch {
+              res.writeHead(400, { 'content-type': 'application/json' });
+              res.end(JSON.stringify({ error: 'invalid_json' }));
+              return;
+            }
+
+            const text = typeof payload.text === 'string' ? payload.text : '';
+            if (text.includes('block')) {
+              res.writeHead(200, { 'content-type': 'application/json' });
+              res.end(JSON.stringify({
+                requestId: 'e2e-block',
+                decision: 'BLOCKED',
+                blockMessage: 'blocked by e2e',
+                categories: ['TEST_BLOCK'],
+              }));
+              return;
+            }
+
+            if (payload.source === 'model_output') {
+              res.writeHead(200, { 'content-type': 'application/json' });
+              res.end(JSON.stringify({
+                requestId: 'e2e-sanitize',
+                decision: 'SANITIZED',
+                sanitizedText: '[sanitized]',
+              }));
+              return;
+            }
+
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({
+              requestId: 'e2e-allow',
+              decision: 'ALLOWED',
+              categories: [],
+            }));
+          });
+        });
+        server.listen(8787, '0.0.0.0');
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          'require("http").get("http://localhost:8787/health",s=>{s.resume();process.exit(s.statusCode===200?0:1)}).on("error",()=>process.exit(1))',
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    networks:
+      - e2e
+
+  adapter:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      ADAPTER_PORT: '8081'
+      VIGIL_API_URL: 'http://mock-vigil:8787'
+      VIGIL_ALLOW_INSECURE_HTTP: 'true'
+      VIGIL_API_KEY: 'vg_live_e2e_key'
+      VIGIL_TIMEOUT_MS: '3000'
+      ADAPTER_FAIL_MODE: 'closed'
+      LOG_LEVEL: 'error'
+      NODE_ENV: 'production'
+    depends_on:
+      mock-vigil:
+        condition: service_healthy
+    healthcheck:
+      interval: 5s
+      timeout: 2s
+      retries: 10
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          'const r=require("http").get("http://localhost:8081/health/live",s=>{s.resume();process.exit(s.statusCode===200?0:1)});r.on("error",()=>process.exit(1))',
+        ]
+    networks:
+      - e2e
+
+  e2e:
+    image: node:24-alpine
+    depends_on:
+      adapter:
+        condition: service_healthy
+    command:
+      - node
+      - -e
+      - |
+        async function callGuardrail(payload) {
+          const response = await fetch('http://adapter:8081/beta/litellm_basic_guardrail_api', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const body = await response.json();
+          return { statusCode: response.status, body };
+        }
+
+        function assert(condition, message) {
+          if (!condition) {
+            console.error(message);
+            process.exit(1);
+          }
+        }
+
+        const main = async () => {
+          const allowResult = await callGuardrail({
+            input_type: 'request',
+            texts: ['hello world'],
+          });
+          assert(allowResult.statusCode === 200, 'allow status: ' + String(allowResult.statusCode));
+          assert(allowResult.body.action === 'NONE', 'allow action: ' + JSON.stringify(allowResult.body));
+
+          const blockedResult = await callGuardrail({
+            input_type: 'request',
+            texts: ['please block this'],
+          });
+          assert(blockedResult.statusCode === 200, 'blocked status: ' + String(blockedResult.statusCode));
+          assert(
+            blockedResult.body.action === 'BLOCKED',
+            'blocked action: ' + JSON.stringify(blockedResult.body),
+          );
+          assert(
+            blockedResult.body.blocked_reason === 'blocked by e2e',
+            'blocked reason: ' + JSON.stringify(blockedResult.body),
+          );
+
+          const sanitizedResult = await callGuardrail({
+            input_type: 'response',
+            texts: ['sensitive output'],
+          });
+          assert(
+            sanitizedResult.statusCode === 200,
+            'sanitized status: ' + String(sanitizedResult.statusCode),
+          );
+          assert(
+            sanitizedResult.body.action === 'GUARDRAIL_INTERVENED',
+            'sanitized action: ' + JSON.stringify(sanitizedResult.body),
+          );
+          assert(
+            Array.isArray(sanitizedResult.body.texts) &&
+              sanitizedResult.body.texts.length === 1 &&
+              sanitizedResult.body.texts[0] === '[sanitized]',
+            'sanitized payload: ' + JSON.stringify(sanitizedResult.body),
+          );
+        };
+
+        main().catch((error) => {
+          console.error(error);
+          process.exit(1);
+        });
+    networks:
+      - e2e
+
+networks:
+  e2e:
+    driver: bridge

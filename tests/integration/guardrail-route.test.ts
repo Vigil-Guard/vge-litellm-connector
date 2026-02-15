@@ -5,6 +5,7 @@ import Fastify from 'fastify';
 import type { FastifyInstance } from 'fastify';
 import { registerGuardrailRoute } from '../../src/guardrail-route.js';
 import { registerHealthRoutes } from '../../src/health.js';
+import { registerMetrics } from '../../src/metrics.js';
 import { resetConnectivityTracker, recordVigilCallResult } from '../../src/vigil-client.js';
 import type { AdapterConfig } from '../../src/config.js';
 
@@ -54,8 +55,19 @@ function buildConfig(overrides?: Partial<AdapterConfig>): AdapterConfig {
   };
 }
 
-async function buildApp(config: AdapterConfig): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
+async function buildApp(
+  config: AdapterConfig,
+  options?: { includeMetrics?: boolean },
+): Promise<FastifyInstance> {
+  const app = Fastify({
+    logger: false,
+    ajv: {
+      customOptions: {
+        coerceTypes: false,
+      },
+    },
+  });
+  if (options?.includeMetrics) await registerMetrics(app);
   await registerHealthRoutes(app);
   await registerGuardrailRoute(app, config);
   return app;
@@ -117,6 +129,17 @@ describe('guardrail route integration', () => {
       method: 'POST',
       url: '/beta/litellm_basic_guardrail_api',
       payload: { input_type: 'invalid', texts: ['test'] },
+    });
+    expect(response.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('returns 400 for non-string texts entries', async () => {
+    const app = await buildApp(buildConfig());
+    const response = await app.inject({
+      method: 'POST',
+      url: '/beta/litellm_basic_guardrail_api',
+      payload: { input_type: 'request', texts: [123] },
     });
     expect(response.statusCode).toBe(400);
     await app.close();
@@ -315,6 +338,17 @@ describe('guardrail route integration', () => {
     await app.close();
   });
 
+  it('health ready returns 503 when connectivity is unknown (no traffic yet)', async () => {
+    const app = await buildApp(buildConfig());
+    const response = await app.inject({ method: 'GET', url: '/health/ready' });
+    expect(response.statusCode).toBe(503);
+    const body = response.json() as Record<string, unknown>;
+    expect(body['status']).toBe('unknown');
+    expect(body['vigilReachable']).toBe(false);
+    expect(body['vigilReachability']).toBe('unknown');
+    await app.close();
+  });
+
   it('health ready returns ok when Vigil is reachable', async () => {
     recordVigilCallResult(true);
     const app = await buildApp(buildConfig());
@@ -336,6 +370,49 @@ describe('guardrail route integration', () => {
     const body = response.json() as Record<string, unknown>;
     expect(body['status']).toBe('degraded');
     expect(body['vigilReachable']).toBe(false);
+    await app.close();
+  });
+
+  it('requires inbound bearer token when configured', async () => {
+    const app = await buildApp(buildConfig({ inboundBearerToken: 'adapter-secret' }));
+    const response = await app.inject({
+      method: 'POST',
+      url: '/beta/litellm_basic_guardrail_api',
+      payload: { input_type: 'request', texts: ['hello'] },
+    });
+    expect(response.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('accepts valid inbound bearer token when configured', async () => {
+    const app = await buildApp(buildConfig({ inboundBearerToken: 'adapter-secret' }));
+    const response = await app.inject({
+      method: 'POST',
+      url: '/beta/litellm_basic_guardrail_api',
+      headers: { authorization: 'Bearer adapter-secret' },
+      payload: { input_type: 'request', texts: ['hello'] },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ action: 'NONE' });
+    await app.close();
+  });
+
+  it('exposes custom decision and backend metrics', async () => {
+    mockVigilHandler = () => ({ status: 503, body: { error: 'temporary' } });
+    const app = await buildApp(buildConfig(), { includeMetrics: true });
+
+    await app.inject({
+      method: 'POST',
+      url: '/beta/litellm_basic_guardrail_api',
+      payload: { input_type: 'request', texts: ['trigger backend error'] },
+    });
+
+    const metricsResponse = await app.inject({ method: 'GET', url: '/metrics' });
+    expect(metricsResponse.statusCode).toBe(200);
+    expect(metricsResponse.body).toContain('vge_guardrail_adapter_decisions_total');
+    expect(metricsResponse.body).toContain('vge_guardrail_adapter_backend_errors_total');
+    expect(metricsResponse.body).toContain('vge_guardrail_adapter_vigil_request_duration_seconds');
+
     await app.close();
   });
 });

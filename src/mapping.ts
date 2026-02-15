@@ -32,6 +32,21 @@ export interface VigilAnalyzeResponse {
 }
 
 const VALID_INPUT_TYPES = new Set(['request', 'response']);
+const REQUEST_DATA_METADATA_KEYS = [
+  'model',
+  'model_group',
+  'provider',
+  'region',
+  'deployment',
+  'user',
+  'user_id',
+  'session_id',
+  'conversation_id',
+  'request_id',
+  'tenant_id',
+  'org_id',
+] as const;
+const MAX_METADATA_STRING_LENGTH = 500;
 
 export function validateInputType(value: unknown): 'request' | 'response' {
   if (typeof value !== 'string' || !VALID_INPUT_TYPES.has(value)) {
@@ -44,9 +59,13 @@ export function mapInputType(inputType: 'request' | 'response'): 'user_input' | 
   return inputType === 'response' ? 'model_output' : 'user_input';
 }
 
-export function extractText(texts: string[] | undefined): string | null {
+export function extractText(texts: unknown[] | undefined): string | null {
   if (!texts) return null;
-  return texts.find((t) => t.trim().length > 0) ?? null;
+  for (const value of texts) {
+    if (typeof value !== 'string') continue;
+    if (value.trim().length > 0) return value;
+  }
+  return null;
 }
 
 export function buildVigilRequest(
@@ -58,6 +77,8 @@ export function buildVigilRequest(
   const metadata: Record<string, unknown> = {};
   if (litellmRequest.litellm_trace_id) metadata['litellmTraceId'] = litellmRequest.litellm_trace_id;
   if (litellmRequest.litellm_call_id) metadata['litellmCallId'] = litellmRequest.litellm_call_id;
+  const requestDataMetadata = extractMetadataFromRequestData(litellmRequest.request_data);
+  Object.assign(metadata, requestDataMetadata);
 
   return {
     text,
@@ -89,4 +110,39 @@ export function mapVigilDecision(
   }
 
   return { action: 'NONE' };
+}
+
+function extractMetadataFromRequestData(
+  requestData: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (!requestData) return {};
+
+  const metadata: Record<string, unknown> = {};
+  for (const key of REQUEST_DATA_METADATA_KEYS) {
+    const value = requestData[key];
+    const normalizedValue = normalizeMetadataValue(value);
+    if (normalizedValue === undefined) continue;
+    metadata[key] = normalizedValue;
+  }
+
+  return metadata;
+}
+
+function normalizeMetadataValue(value: unknown): string | number | boolean | string[] | undefined {
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+
+  if (typeof value === 'string') {
+    if (value.length <= MAX_METADATA_STRING_LENGTH) return value;
+    return value.slice(0, MAX_METADATA_STRING_LENGTH);
+  }
+
+  if (Array.isArray(value) && value.every((entry) => typeof entry === 'string')) {
+    return value.slice(0, 10).map((entry) =>
+      entry.length <= MAX_METADATA_STRING_LENGTH
+        ? entry
+        : entry.slice(0, MAX_METADATA_STRING_LENGTH),
+    );
+  }
+
+  return undefined;
 }

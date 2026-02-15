@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { isVigilReachable } from './vigil-client.js';
+import { getVigilReachabilityStatus } from './vigil-client.js';
 
 // Read version once at module load
 const { default: pkg } = await import('../package.json', { with: { type: 'json' } });
@@ -11,9 +11,12 @@ export async function registerHealthRoutes(app: FastifyInstance): Promise<void> 
   });
 
   app.get('/health/ready', async (_request, reply) => {
-    const reachable = isVigilReachable();
-    const status = reachable ? 'ok' : 'degraded';
+    const reachability = getVigilReachabilityStatus();
+    const reachable = reachability === 'reachable';
+    const status = reachable ? 'ok' : reachability === 'unknown' ? 'unknown' : 'degraded';
     const statusCode = reachable ? 200 : 503;
-    return reply.status(statusCode).send({ status, vigilReachable: reachable, version: VERSION });
+    return reply
+      .status(statusCode)
+      .send({ status, vigilReachable: reachable, vigilReachability: reachability, version: VERSION });
   });
 }

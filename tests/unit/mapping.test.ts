@@ -60,6 +60,10 @@ describe('extractText', () => {
   it('returns first string when all non-empty', () => {
     expect(extractText(['first', 'second'])).toBe('first');
   });
+
+  it('ignores non-string entries safely', () => {
+    expect(extractText([42, { text: 'x' }, 'valid'] as unknown[])).toBe('valid');
+  });
 });
 
 describe('buildVigilRequest', () => {
@@ -91,6 +95,40 @@ describe('buildVigilRequest', () => {
       mode: 'full',
       metadata: { litellmTraceId: 'trace-123', litellmCallId: 'call-456' },
     });
+  });
+
+  it('maps selected request_data fields into metadata', () => {
+    const req: LiteLLMGuardrailRequest = {
+      input_type: 'request',
+      texts: ['prompt'],
+      request_data: {
+        model: 'gpt-4o',
+        provider: 'openai',
+        user_id: 'user-1',
+        ignored_nested: { a: 1 },
+      },
+    };
+    expect(buildVigilRequest(req)).toEqual({
+      text: 'prompt',
+      source: 'user_input',
+      mode: 'full',
+      metadata: {
+        model: 'gpt-4o',
+        provider: 'openai',
+        user_id: 'user-1',
+      },
+    });
+  });
+
+  it('truncates long metadata strings from request_data', () => {
+    const req: LiteLLMGuardrailRequest = {
+      input_type: 'request',
+      texts: ['prompt'],
+      request_data: {
+        conversation_id: 'x'.repeat(700),
+      },
+    };
+    expect((buildVigilRequest(req)?.metadata?.['conversation_id'] as string).length).toBe(500);
   });
 
   it('omits metadata when no trace IDs', () => {

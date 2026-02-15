@@ -7,14 +7,17 @@ services:
       dockerfile: Dockerfile
     container_name: vigil-litellm-adapter
     restart: unless-stopped
-    ports:
-      - '8081:8081'
+    # Internal only for single-host compose reference setup.
+    # For multi-host deployment publish via controlled ingress/firewall.
+    expose:
+      - '8081'
     environment:
       ADAPTER_PORT: '8081'
       VIGIL_API_URL: ${VIGIL_API_URL:?VIGIL_API_URL is required (HTTPS endpoint)}
       VIGIL_API_KEY: ${VIGIL_API_KEY:?VIGIL_API_KEY is required}
       VIGIL_TIMEOUT_MS: ${VIGIL_TIMEOUT_MS:-3000}
       ADAPTER_FAIL_MODE: ${ADAPTER_FAIL_MODE:-closed}
+      ADAPTER_INBOUND_BEARER_TOKEN: ${ADAPTER_INBOUND_BEARER_TOKEN:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       NODE_ENV: production
     security_opt:
