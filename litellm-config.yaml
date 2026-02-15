@@ -1,0 +1,14 @@
+model_list:
+  - model_name: gpt-4
+    litellm_params:
+      model: openai/gpt-4
+      api_key: os.environ/OPENAI_API_KEY
+
+litellm_settings:
+  guardrails:
+    - guardrail_name: vigil-guard
+      litellm_params:
+        guardrail: generic_guardrail_api
+        mode: [pre_call, post_call]
+        api_base: http://vigil-litellm-adapter:8081
+        default_on: true

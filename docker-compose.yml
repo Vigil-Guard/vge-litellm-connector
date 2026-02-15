@@ -1,0 +1,66 @@
+name: vge-litellm
+
+services:
+  vigil-litellm-adapter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vigil-litellm-adapter
+    restart: unless-stopped
+    ports:
+      - '8081:8081'
+    environment:
+      ADAPTER_PORT: '8081'
+      VIGIL_API_URL: ${VIGIL_API_URL:-http://api:8787}
+      VIGIL_API_KEY: ${VIGIL_API_KEY:?VIGIL_API_KEY is required}
+      VIGIL_TIMEOUT_MS: ${VIGIL_TIMEOUT_MS:-3000}
+      ADAPTER_FAIL_MODE: ${ADAPTER_FAIL_MODE:-closed}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: production
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - litellm-internal
+      - vigil-public
+    healthcheck:
+      interval: 15s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          'const r=require("http").get("http://localhost:8081/health/live",s=>{s.resume();process.exit(s.statusCode===200?0:1)});r.on("error",()=>process.exit(1))',
+        ]
+
+  litellm-proxy:
+    # PINNED version - generic_guardrail_api is BETA, avoid unexpected contract changes
+    image: ghcr.io/berriai/litellm:v1.63.14.dev3
+    container_name: litellm-proxy
+    restart: unless-stopped
+    ports:
+      - '4000:4000'
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-litellm-master}
+    command: ['--config', '/app/config.yaml', '--port', '4000']
+    depends_on:
+      vigil-litellm-adapter:
+        condition: service_healthy
+    networks:
+      - litellm-internal
+
+networks:
+  litellm-internal:
+    driver: bridge
+  vigil-public:
+    external: true
+    name: vigil-public
