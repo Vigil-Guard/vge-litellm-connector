@@ -17,13 +17,14 @@ interface GuardrailRequestBody {
 const GUARDRAIL_ROUTE_BODY_SCHEMA = {
   type: 'object',
   required: ['input_type'],
+  // LiteLLM may add new fields; allow them for forward compatibility
   additionalProperties: true,
   properties: {
     input_type: { type: 'string', enum: ['request', 'response'] },
-    texts: { type: 'array', items: { type: 'string' } },
+    texts: { type: 'array', items: { type: 'string', maxLength: 100_000 }, maxItems: 100 },
     request_data: { type: 'object', additionalProperties: true },
-    litellm_trace_id: { type: 'string' },
-    litellm_call_id: { type: 'string' },
+    litellm_trace_id: { type: 'string', maxLength: 256 },
+    litellm_call_id: { type: 'string', maxLength: 256 },
   },
 } as const;
 
@@ -56,7 +57,11 @@ export async function registerGuardrailRoute(
         litellm_call_id: payload.litellm_call_id,
       };
 
-      request.log.debug({ payload: litellmPayload }, 'Incoming guardrail payload');
+      request.log.debug(
+        { input_type: litellmPayload.input_type, textCount: litellmPayload.texts?.length ?? 0,
+          litellm_trace_id: litellmPayload.litellm_trace_id },
+        'Incoming guardrail payload',
+      );
 
       const originalText = extractText(litellmPayload.texts);
       const vigilRequest = buildVigilRequest(litellmPayload);

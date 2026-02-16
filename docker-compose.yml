@@ -35,6 +35,11 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
     networks:
       - litellm-internal
     healthcheck:
@@ -57,14 +62,30 @@ services:
     container_name: litellm-proxy
     restart: unless-stopped
     ports:
-      - '4000:4000'
+      - '127.0.0.1:4000:4000'
     volumes:
       - ./litellm-config.yaml:/app/config.yaml:ro
     environment:
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-litellm-master}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY is required}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-    command: ['--config', '/app/config.yaml', '--port', '4000', '--detailed_debug']
+    # Use LITELLM_LOG=DEBUG env var for debug logging
+    command: ['--config', '/app/config.yaml', '--port', '4000']
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+    healthcheck:
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+      test: ['CMD', 'python', '-c', 'import urllib.request; urllib.request.urlopen("http://localhost:4000/health/liveliness")']
     depends_on:
       vge-litellm-adapter:
         condition: service_healthy

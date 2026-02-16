@@ -57,7 +57,7 @@ function buildConfig(overrides?: Partial<AdapterConfig>): AdapterConfig {
 
 async function buildApp(
   config: AdapterConfig,
-  options?: { includeMetrics?: boolean },
+  options?: { includeMetrics?: boolean; includeSecurityHeaders?: boolean },
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: false,
@@ -67,6 +67,13 @@ async function buildApp(
       },
     },
   });
+  if (options?.includeSecurityHeaders) {
+    app.addHook('onSend', async (_request, reply) => {
+      void reply.header('X-Content-Type-Options', 'nosniff');
+      void reply.header('X-Frame-Options', 'DENY');
+      void reply.header('Cache-Control', 'no-store');
+    });
+  }
   if (options?.includeMetrics) await registerMetrics(app);
   await registerHealthRoutes(app);
   await registerGuardrailRoute(app, config);
@@ -412,6 +419,122 @@ describe('guardrail route integration', () => {
     expect(metricsResponse.body).toContain('vge_guardrail_adapter_decisions_total');
     expect(metricsResponse.body).toContain('vge_guardrail_adapter_backend_errors_total');
     expect(metricsResponse.body).toContain('vge_guardrail_adapter_vigil_request_duration_seconds');
+
+    await app.close();
+  });
+
+  it('includes security response headers', async () => {
+    const app = await buildApp(buildConfig(), { includeSecurityHeaders: true });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/beta/litellm_basic_guardrail_api',
+      payload: { input_type: 'request', texts: ['hello'] },
+    });
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['x-frame-options']).toBe('DENY');
+    expect(response.headers['cache-control']).toBe('no-store');
+    await app.close();
+  });
+
+  it('rejects wrong bearer token', async () => {
+    const app = await buildApp(buildConfig({ inboundBearerToken: 'correct-token' }));
+    const response = await app.inject({
+      method: 'POST',
+      url: '/beta/litellm_basic_guardrail_api',
+      headers: { authorization: 'Bearer wrong-token' },
+      payload: { input_type: 'request', texts: ['hello'] },
+    });
+    expect(response.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('returns BLOCKED on non-JSON Vigil response (fail-closed)', async () => {
+    mockVigilServer.removeAllListeners('request');
+    mockVigilServer.on('request', (req: IncomingMessage, res: ServerResponse) => {
+      let data = '';
+      req.on('data', (chunk: Buffer) => { data += String(chunk); });
+      req.on('end', () => {
+        res.writeHead(200, { 'content-type': 'text/html' });
+        res.end('<html>Bad Gateway</html>');
+      });
+    });
+
+    const app = await buildApp(buildConfig({ failMode: 'closed' }));
+    const response = await app.inject({
+      method: 'POST',
+      url: '/beta/litellm_basic_guardrail_api',
+      payload: { input_type: 'request', texts: ['test'] },
+    });
+    const body = response.json() as Record<string, unknown>;
+    expect(body['action']).toBe('BLOCKED');
+
+    // Restore handler
+    mockVigilServer.removeAllListeners('request');
+    mockVigilServer.on('request', (req: IncomingMessage, res: ServerResponse) => {
+      let data = '';
+      req.on('data', (chunk: Buffer) => { data += String(chunk); });
+      req.on('end', () => {
+        const parsed = JSON.parse(data) as Record<string, unknown>;
+        const { status, body: respBody } = mockVigilHandler(parsed);
+        res.writeHead(status, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(respBody));
+      });
+    });
+
+    await app.close();
+  });
+
+  it('returns BLOCKED when Vigil returns invalid decision (fail-closed)', async () => {
+    mockVigilHandler = () => ({
+      status: 200,
+      body: { requestId: 'invalid-decision', decision: 'MAYBE', categories: [] },
+    });
+    const app = await buildApp(buildConfig({ failMode: 'closed' }));
+    const response = await app.inject({
+      method: 'POST',
+      url: '/beta/litellm_basic_guardrail_api',
+      payload: { input_type: 'request', texts: ['test'] },
+    });
+    const body = response.json() as Record<string, unknown>;
+    expect(body['action']).toBe('BLOCKED');
+    expect(body['blocked_reason']).toContain('unavailable');
+    await app.close();
+  });
+
+  it('does not retry on 401 from Vigil', async () => {
+    let callCount = 0;
+    mockVigilServer.removeAllListeners('request');
+    mockVigilServer.on('request', (req: IncomingMessage, res: ServerResponse) => {
+      callCount++;
+      let data = '';
+      req.on('data', (chunk: Buffer) => { data += String(chunk); });
+      req.on('end', () => {
+        res.writeHead(401, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'unauthorized' }));
+      });
+    });
+
+    const app = await buildApp(buildConfig({ failMode: 'closed' }));
+    await app.inject({
+      method: 'POST',
+      url: '/beta/litellm_basic_guardrail_api',
+      payload: { input_type: 'request', texts: ['test'] },
+    });
+
+    expect(callCount).toBe(1);
+
+    // Restore handler
+    mockVigilServer.removeAllListeners('request');
+    mockVigilServer.on('request', (req: IncomingMessage, res: ServerResponse) => {
+      let data = '';
+      req.on('data', (chunk: Buffer) => { data += String(chunk); });
+      req.on('end', () => {
+        const parsed = JSON.parse(data) as Record<string, unknown>;
+        const { status, body: respBody } = mockVigilHandler(parsed);
+        res.writeHead(status, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(respBody));
+      });
+    });
 
     await app.close();
   });

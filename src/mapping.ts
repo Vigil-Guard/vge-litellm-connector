@@ -31,6 +31,7 @@ export interface VigilAnalyzeResponse {
   outputText?: string;
 }
 
+const VALID_DECISIONS = new Set(['ALLOWED', 'BLOCKED', 'SANITIZED']);
 const VALID_INPUT_TYPES = new Set(['request', 'response']);
 const REQUEST_DATA_METADATA_KEYS = [
   'model',
@@ -47,6 +48,21 @@ const REQUEST_DATA_METADATA_KEYS = [
   'org_id',
 ] as const;
 const MAX_METADATA_STRING_LENGTH = 500;
+
+export function validateVigilDecision(response: unknown): VigilAnalyzeResponse {
+  if (
+    response === null || typeof response !== 'object' ||
+    !('decision' in response) ||
+    typeof (response as Record<string, unknown>)['decision'] !== 'string' ||
+    !VALID_DECISIONS.has((response as Record<string, unknown>)['decision'] as string)
+  ) {
+    throw new Error(
+      `Invalid Vigil response: expected decision ALLOWED|BLOCKED|SANITIZED, ` +
+      `got ${JSON.stringify((response as Record<string, unknown>)?.['decision'])}`,
+    );
+  }
+  return response as VigilAnalyzeResponse;
+}
 
 export function validateInputType(value: unknown): 'request' | 'response' {
   if (typeof value !== 'string' || !VALID_INPUT_TYPES.has(value)) {

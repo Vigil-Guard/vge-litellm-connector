@@ -1,5 +1,6 @@
 import type { AdapterConfig } from './config.js';
 import type { VigilAnalyzeRequest, VigilAnalyzeResponse, LiteLLMGuardrailResponse } from './mapping.js';
+import { validateVigilDecision } from './mapping.js';
 import type { FastifyBaseLogger } from 'fastify';
 import {
   observeVigilRequestDurationMs,
@@ -91,7 +92,8 @@ async function fetchWithRetry(
         throw statusError;
       }
 
-      return (await response.json()) as VigilAnalyzeResponse;
+      const parsed: unknown = await response.json();
+      return validateVigilDecision(parsed);
     } finally {
       clearTimeout(timeout);
     }
@@ -110,7 +112,7 @@ async function fetchWithRetry(
   }
 }
 
-function isRetryable(error: unknown): boolean {
+export function isRetryable(error: unknown): boolean {
   if (error instanceof Error) {
     if (error.name === 'AbortError') return true;
     const code = getErrorCode(error);
@@ -124,7 +126,7 @@ function isRetryable(error: unknown): boolean {
   return false;
 }
 
-function classifyVigilError(error: unknown): VigilBackendErrorType {
+export function classifyVigilError(error: unknown): VigilBackendErrorType {
   if (!(error instanceof Error)) return 'unknown';
   if (error.name === 'AbortError') return 'timeout';
 

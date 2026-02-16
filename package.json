@@ -12,6 +12,7 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "test:e2e": "sh -c 'docker compose -f tests/e2e/docker-compose.e2e.yml up --build --abort-on-container-exit --exit-code-from e2e; code=$?; docker compose -f tests/e2e/docker-compose.e2e.yml down -v --remove-orphans; exit $code'",
     "typecheck": "tsc --noEmit"
   },
@@ -24,6 +25,7 @@
     "pino-pretty": "^13.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
+    "@vitest/coverage-v8": "^2.1.8",
     "vitest": "^2.1.8"
   }
 }
