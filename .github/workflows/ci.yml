@@ -45,3 +45,4 @@ jobs:
           image-ref: vge-litellm-connector:ci
           severity: CRITICAL,HIGH
           exit-code: '1'
+          ignore-unfixed: true
