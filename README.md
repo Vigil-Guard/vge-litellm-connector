@@ -356,4 +356,4 @@ pnpm start                # run compiled build
 
 ## License
 
-MIT
+MIT License - see [LICENSE](LICENSE) for details.
