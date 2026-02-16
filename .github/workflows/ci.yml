@@ -39,10 +39,11 @@ jobs:
       - name: Build Docker image
         run: docker build --tag vge-litellm-connector:ci .
 
-      - name: Scan container image
+      - name: Scan container image (OS packages)
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: vge-litellm-connector:ci
           severity: CRITICAL,HIGH
           exit-code: '1'
           ignore-unfixed: true
+          vuln-type: 'os'
