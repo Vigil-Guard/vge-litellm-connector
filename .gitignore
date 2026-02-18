@@ -2,5 +2,13 @@ node_modules/
 dist/
 coverage/
 .env
+.env.*
+!.env.example
 *.tgz
 *.log
+*.pem
+*.key
+.npmrc
+.DS_Store
+.idea/
+.vscode/
