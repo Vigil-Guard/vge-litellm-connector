@@ -1,5 +1,42 @@
 # VGE LiteLLM Connector
 
+> [!IMPORTANT]
+> **Deprecated — use the native LiteLLM Guardrail instead.**
+>
+> Vigil Guard is now a **built-in guardrail provider in LiteLLM Proxy**. Add one block to `config.yaml` and protect every model behind your gateway. There is no separate connector to install, build, or operate.
+>
+> This repository remains available for existing deployments but is no longer the recommended path. New integrations should use the native provider.
+
+## LiteLLM Guardrail (official)
+
+Vigil Guard is a built-in guardrail provider in LiteLLM Proxy. Add one block to `config.yaml` and protect every model behind your gateway. No separate connector to install.
+
+- ✓ Native `vigil_guard` provider, shipped inside LiteLLM
+- ✓ Configure in `config.yaml`, no extra repo or build step
+- ✓ `pre_call` and `post_call` modes: scan prompts and model output
+- ✓ ALLOW / SANITIZE / BLOCK based on your policy
+- ✓ Inspects tool-call arguments on post-call checks
+- ✓ Fail-closed by default, `fail_open` available per guardrail
+
+```yaml
+guardrails:
+  - guardrail_name: vigil-guard
+    litellm_params:
+      guardrail: vigil_guard
+      mode: [pre_call, post_call]
+      default_on: true
+```
+
+See the official documentation for the full list of configuration fields, credentials, and policy options:
+
+**[Read the LiteLLM docs ↗](https://docs.litellm.ai/docs/proxy/guardrails/vigil_guard)** · **[LiteLLM on GitHub ↗](https://github.com/BerriAI/litellm)**
+
+---
+
+## Legacy connector
+
+The HTTP adapter below predates the native provider. It remains documented for existing deployments.
+
 HTTP adapter between [LiteLLM Proxy](https://docs.litellm.ai/) and [Vigil Guard Enterprise](https://github.com/vigilguard/enterprise).
 It translates LiteLLM `generic_guardrail_api` payloads to Vigil Guard `POST /v1/guard/analyze`, then maps Vigil decisions back to LiteLLM actions.
 
